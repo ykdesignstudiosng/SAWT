@@ -1,0 +1,61 @@
+name: Build SAWT
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows VST3+CLAP
+            os: windows-latest
+          - name: macOS VST3+AU+CLAP
+            os: macos-latest
+          - name: Linux VST3+CLAP
+            os: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libx11-dev libxcomposite-dev libxcursor-dev \
+            libxext-dev libxinerama-dev libxrandr-dev libxrender-dev \
+            libfreetype-dev libfontconfig1-dev libglu1-mesa-dev pkg-config
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DSAWT_BUILD_CLAP=ON
+        shell: bash
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+        shell: bash
+
+      - name: Collect artefacts
+        shell: bash
+        run: |
+          mkdir -p dist
+          find build -name "*.vst3" -o -name "*.clap" -o -name "*.component" | while read f; do
+            cp -r "$f" dist/ 2>/dev/null || true
+          done
+          ls -la dist/
+
+      - name: Upload plugin binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: SAWT-${{ matrix.os }}
+          path: dist/
+          if-no-files-found: error
